@@ -1,0 +1,174 @@
+openapi: 3.1.0
+info:
+  title: Student Task Tracker API
+  version: 0.1.0
+  description: REST contract for the base architecture. All endpoints except /auth/* require a session cookie.
+servers:
+  - url: /api/v1
+paths:
+  /auth/register:
+    post:
+      summary: Create an account (FR-001)
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/Credentials' }
+      responses:
+        '201': { description: Account created and signed in }
+        '409': { description: Email already registered }
+  /auth/login:
+    post:
+      summary: Sign in (FR-001)
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/Credentials' }
+      responses:
+        '204': { description: Signed in; session cookie set }
+        '401': { description: Wrong email or password }
+  /auth/logout:
+    post:
+      summary: Sign out (FR-001)
+      responses:
+        '204': { description: Signed out }
+  /auth/password-reset:
+    post:
+      summary: Send a password-reset email (FR-002)
+      responses:
+        '202': { description: Email sent if the account exists }
+  /me:
+    get:
+      summary: Current student profile and reminder settings
+      responses:
+        '200':
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Student' }
+    patch:
+      summary: Update profile, time zone or reminder settings (FR-008, FR-009)
+      responses:
+        '200': { description: Updated }
+    delete:
+      summary: Delete the account and all its data (FR-013)
+      responses:
+        '204': { description: Deleted }
+  /courses:
+    get:
+      summary: List my courses
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/Course' }
+    post:
+      summary: Create a course (FR-003)
+      responses:
+        '201': { description: Created }
+  /courses/{courseId}:
+    parameters:
+      - { name: courseId, in: path, required: true, schema: { type: string, format: uuid } }
+    patch:
+      summary: Rename a course (FR-003)
+      responses:
+        '200': { description: Updated }
+        '404': { description: Not found or not owned by this student }
+    delete:
+      summary: Delete a course and its assignments (FR-003)
+      responses:
+        '204': { description: Deleted }
+  /courses/{courseId}/average:
+    parameters:
+      - { name: courseId, in: path, required: true, schema: { type: string, format: uuid } }
+    get:
+      summary: Weighted average from graded assignments (FR-010)
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  average: { type: [number, 'null'] }
+                  gradedCount: { type: integer }
+                  totalCount: { type: integer }
+  /assignments:
+    get:
+      summary: List assignments sorted by due date (FR-005, FR-007, FR-011)
+      parameters:
+        - { name: courseId, in: query, schema: { type: string, format: uuid } }
+        - { name: status, in: query, schema: { type: string, enum: [upcoming, overdue, done] } }
+        - { name: from, in: query, schema: { type: string, format: date-time } }
+        - { name: to, in: query, schema: { type: string, format: date-time } }
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/Assignment' }
+    post:
+      summary: Create an assignment and schedule its reminder (FR-004, FR-008)
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AssignmentInput' }
+      responses:
+        '201': { description: Created }
+        '422': { description: Validation error }
+  /assignments/{assignmentId}:
+    parameters:
+      - { name: assignmentId, in: path, required: true, schema: { type: string, format: uuid } }
+    patch:
+      summary: Edit, mark done or undo (FR-004, FR-006)
+      responses:
+        '200': { description: Updated; reminder rescheduled or cancelled }
+    delete:
+      summary: Delete an assignment (FR-004)
+      responses:
+        '204': { description: Deleted }
+components:
+  schemas:
+    Credentials:
+      type: object
+      required: [email, password]
+      properties:
+        email: { type: string, format: email }
+        password: { type: string, minLength: 8 }
+    Student:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        email: { type: string }
+        displayName: { type: string }
+        timeZone: { type: string }
+        remindersEnabled: { type: boolean }
+        reminderLeadMinutes: { type: integer, minimum: 60, maximum: 10080 }
+    Course:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        code: { type: string }
+        color: { type: string }
+        term: { type: string }
+    AssignmentInput:
+      type: object
+      required: [courseId, title, dueAt]
+      properties:
+        courseId: { type: string, format: uuid }
+        title: { type: string, maxLength: 200 }
+        dueAt: { type: string, format: date-time }
+        notes: { type: string, maxLength: 2000 }
+        weight: { type: number, minimum: 0, maximum: 100 }
+        score: { type: number, minimum: 0, maximum: 100 }
+    Assignment:
+      allOf:
+        - $ref: '#/components/schemas/AssignmentInput'
+        - type: object
+          properties:
+            id: { type: string, format: uuid }
+            status: { type: string, enum: [upcoming, done] }
+            overdue: { type: boolean }
+            completedAt: { type: [string, 'null'], format: date-time }
